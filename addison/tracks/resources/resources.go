@@ -11,30 +11,21 @@ import (
 func createTrack(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
-
 	var t repository.Track
-	err := json.NewDecoder(r.Body).Decode(&t)
-
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	if id != t.Id {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	n := repository.Update(t)
-	if n > 0 {
-		w.WriteHeader(http.StatusNoContent)
-	} else {
-		n = repository.Insert(t)
-		if n > 0 {
-			w.WriteHeader(http.StatusCreated)
+	if err := json.NewDecoder(r.Body).Decode(&t); err == nil {
+		if id == t.Id {
+			if n := repository.Insert(t); n > 0 {
+				w.WriteHeader(204)
+			} else if n := repository.Update(t); n > 0 {
+				w.WriteHeader(201)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
 		} else {
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusBadRequest)
 		}
+	} else {
+		w.WriteHeader(http.StatusBadRequest)
 	}
 }
 
@@ -43,36 +34,31 @@ func listTrack(w http.ResponseWriter, r *http.Request) {
 
 	if trackCount == 0 {
 		w.WriteHeader(http.StatusNotFound)
-		return
 	}
 
 	if trackCount == -1 {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
-	ids := make([]string, 0, len(tracks))
+	Ids := []string{}
 
 	for _, t := range tracks {
-		ids = append(ids, t.Id)
+		Ids = append(Ids, t.Id)
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(ids)
+	json.NewEncoder(w).Encode(Ids)
 }
 
 func readTrack(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
-
-	track, found := repository.Read(id)
-
-	if found == 0 {
+	if c, n := repository.Read(id); n > 0 {
+		d := repository.Track{Id: c.Id, Audio: c.Audio}
+		w.WriteHeader(200)
+		json.NewEncoder(w).Encode(d)
+	} else if n == 0 {
 		w.WriteHeader(http.StatusNotFound)
-	} else if found > 0 {
-		trackData := repository.Track{Id: track.Id, Audio: track.Audio}
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(trackData)
 	} else {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
@@ -80,16 +66,18 @@ func readTrack(w http.ResponseWriter, r *http.Request) {
 
 func deleteTrack(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	id := vars["id"]
+	id, successful := vars["id"]
+	if !successful {
+		w.WriteHeader(http.StatusBadRequest)
+	}
 
 	result := repository.Delete(id)
 
-	switch {
-	case result > 0:
+	if result > 0 {
 		w.WriteHeader(http.StatusNoContent)
-	case result == 0:
+	} else if result == 0 {
 		w.WriteHeader(http.StatusNotFound)
-	default:
+	} else {
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 }

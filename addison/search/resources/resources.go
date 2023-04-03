@@ -9,13 +9,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var api_key = "f153bf06d224509250503c04716b331d"
+var api_key = "903d1e25ae7a962d667ef53c611e6250"
 
-type Request struct {
+type request struct {
 	Audio string
 }
 
-type APIResponse struct {
+type response struct {
 	Status string
 	Result struct {
 		Title string
@@ -23,24 +23,26 @@ type APIResponse struct {
 }
 
 func searchTrack(w http.ResponseWriter, r *http.Request) {
-	var reqBody Request
+	reqBody := map[string]interface{}{}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
+		w.WriteHeader(http.StatusInternalServerError)
 	}
 
-	apiRequest := map[string]interface{}{"api_token": api_key, "audio": reqBody.Audio}
+	audio, successful := reqBody["Audio"]
+	if !successful {
+		w.WriteHeader(http.StatusBadRequest)
+	}
+
+	apiRequest := map[string]interface{}{"api_key": api_key, "audio": audio}
 	marshalled, err := json.Marshal(apiRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
 	apiReq, err := http.Post("https://api.audd.io/recognize", "application/json", bytes.NewBuffer(marshalled))
 	if err != nil || apiReq.StatusCode != http.StatusOK {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
 	defer apiReq.Body.Close()
@@ -48,27 +50,25 @@ func searchTrack(w http.ResponseWriter, r *http.Request) {
 	apiResMarshalled, err := io.ReadAll(apiReq.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
-	var apiRes APIResponse
+	apiRes := response{}
 	err = json.Unmarshal(apiResMarshalled, &apiRes)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
 	if apiRes.Status != "success" {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
 
 	result := map[string]interface{}{"Id": apiRes.Result.Title}
 	err = json.NewEncoder(w).Encode(result)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
-		return
 	}
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func Router() http.Handler {
